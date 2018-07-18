@@ -189,6 +189,12 @@ spdk_rpc_listen(const char *listen_addr)
 			unlink(g_rpc_lock_path);
 			g_rpc_lock_path[0] = '\0';
 		}
+		/*
+		 * XXX Hack to allow unprivileged client (i.e. process
+		 * running in a different container but the same pod)
+		 * use the socket.
+		 */
+		chmod(listen_addr, S_IRWXU | S_IRWXG | S_IRWXO);
 	} else {
 		char *tmp;
 		char *host, *port;
