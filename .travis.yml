@@ -1,0 +1,28 @@
+language: c
+
+compiler:
+  - gcc
+  - clang
+
+dist: trusty
+sudo: false
+
+addons:
+  apt:
+    packages:
+      - astyle
+      - libcunit1-dev
+      - libaio-dev
+      - libssl-dev
+      - libnuma-dev
+      - uuid-dev
+
+before_script:
+  - git submodule update --init
+  - export MAKEFLAGS="-j$(nproc)"
+
+script:
+  - ./scripts/check_format.sh
+  - ./configure --enable-werror
+  - make
+  - ./test/unit/unittest.sh
