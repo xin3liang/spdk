@@ -50,6 +50,8 @@ function usage()
 	echo "                           No path required"
 	echo " crypto                    Build vbdev crypto module."
 	echo "                           No path required."
+	echo " dpdk-machine              Optional.  Uses dpdk machine template for configuring cpu flags."
+	echo "                           example: native"
 	echo " fio                       Build fio_plugin."
 	echo "                           example: /usr/src/fio"
 	echo " vhost                     Build vhost target. Enabled by default."
@@ -203,6 +205,9 @@ for i in "$@"; do
 		--with-dpdk=*)
 			check_dir "$i"
 			CONFIG[DPDK_DIR]=$(readlink -f ${i#*=})
+			;;
+		--with-dpdk-machine=*)
+			CONFIG[DPDK_MACHINE]=${i#*=}
 			;;
 		--without-dpdk)
 			CONFIG[DPDK_DIR]=
