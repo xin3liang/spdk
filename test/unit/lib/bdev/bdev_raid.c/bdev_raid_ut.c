@@ -128,7 +128,9 @@ DEFINE_STUB(spdk_json_decode_array, int, (const struct spdk_json_val *values,
 		spdk_json_decode_fn decode_func,
 		void *out, size_t max_size, size_t *out_size, size_t stride), 0);
 DEFINE_STUB_V(spdk_rpc_register_method, (const char *method, spdk_rpc_method_handler func,
-		uint32_t state_mask));
+		void *ctx, uint32_t state_mask));
+DEFINE_STUB_V(spdk_rpc_no_ctx_wrapper, (struct spdk_jsonrpc_request *request,
+					const struct spdk_json_val *params, void *ctx));
 DEFINE_STUB(spdk_json_decode_uint32, int, (const struct spdk_json_val *val, void *out), 0);
 DEFINE_STUB_V(spdk_bdev_module_list_add, (struct spdk_bdev_module *bdev_module));
 
