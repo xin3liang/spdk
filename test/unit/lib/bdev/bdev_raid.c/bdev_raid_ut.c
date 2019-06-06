@@ -138,6 +138,10 @@ DEFINE_STUB(spdk_json_write_null, int, (struct spdk_json_write_ctx *w), 0);
 DEFINE_STUB(spdk_strerror, const char *, (int errnum), NULL);
 DEFINE_STUB(spdk_bdev_queue_io_wait, int, (struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		struct spdk_bdev_io_wait_entry *entry), 0);
+DEFINE_STUB_V(spdk_rpc_register_method, (const char *method, spdk_rpc_method_handler func,
+		void *ctx, uint32_t state_mask));
+DEFINE_STUB_V(spdk_rpc_no_ctx_wrapper, (struct spdk_jsonrpc_request *request,
+					const struct spdk_json_val *params, void *ctx));
 
 static void
 set_test_opts(void)
