@@ -22,7 +22,6 @@ before_script:
   - export MAKEFLAGS="-j$(nproc)"
 
 script:
-  - ./scripts/check_format.sh
-  - ./configure --enable-werror
+  - ./configure --enable-werror --without-isal --enable-debug
   - make
   - ./test/unit/unittest.sh
