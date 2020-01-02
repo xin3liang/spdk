@@ -215,6 +215,19 @@ void spdk_nvmf_tgt_listen(struct spdk_nvmf_tgt *tgt,
 			  void *cb_arg);
 
 /**
+ * Stop accepting new connections at the provided address.
+ *
+ * This is a counterpart to spdk_nvmf_tgt_listen().
+ *
+ * \param tgt The target associated with the listen address.
+ * \param trid The address to stop listening at.
+ *
+ * \return int. 0 on success or a negated errno on failure.
+ */
+int spdk_nvmf_tgt_stop_listen(struct spdk_nvmf_tgt *tgt,
+			      struct spdk_nvme_transport_id *trid);
+
+/**
  * Function to be called for each newly discovered qpair.
  *
  * \param qpair The newly discovered qpair.
