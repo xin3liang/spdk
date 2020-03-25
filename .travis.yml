@@ -1,0 +1,7 @@
+language: nix
+
+nix: 2.2.1
+
+script:
+  - nix-build
+  - output_dir=/tmp ./result/test/unit/unittest.sh
