@@ -187,6 +187,16 @@ struct spdk_bdev_opts {
 	uint32_t bdev_io_cache_size;
 };
 
+int
+bdev_lock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
+		    uint64_t offset, uint64_t length,
+		    lock_range_cb cb_fn, void *cb_arg);
+
+int
+bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
+		      uint64_t offset, uint64_t length,
+		      lock_range_cb cb_fn, void *cb_arg);
+
 void spdk_bdev_get_opts(struct spdk_bdev_opts *opts);
 
 int spdk_bdev_set_opts(struct spdk_bdev_opts *opts);
