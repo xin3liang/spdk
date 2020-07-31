@@ -1,7 +1,5 @@
 # Changelog
 
-## v20.07.1: (Upcoming Release)
-
 ## v20.07:
 
 ### accel
