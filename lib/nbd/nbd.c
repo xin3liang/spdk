@@ -340,10 +340,28 @@ nbd_io_xmit_check(struct spdk_nbd_disk *nbd)
 static int
 nbd_cleanup_io(struct spdk_nbd_disk *nbd)
 {
+	struct nbd_io *io, *io_tmp;
+
 	/* free io_in_recv */
 	if (nbd->io_in_recv != NULL) {
 		nbd_put_io(nbd, nbd->io_in_recv);
 		nbd->io_in_recv = NULL;
+	}
+
+	/* free io in received_io_list */
+	if (!TAILQ_EMPTY(&nbd->received_io_list)) {
+		TAILQ_FOREACH_SAFE(io, &nbd->received_io_list, tailq, io_tmp) {
+			TAILQ_REMOVE(&nbd->received_io_list, io, tailq);
+			nbd_put_io(nbd, io);
+		}
+	}
+
+	/* free io in executed_io_list */
+	if (!TAILQ_EMPTY(&nbd->executed_io_list)) {
+		TAILQ_FOREACH_SAFE(io, &nbd->executed_io_list, tailq, io_tmp) {
+			TAILQ_REMOVE(&nbd->executed_io_list, io, tailq);
+			nbd_put_io(nbd, io);
+		}
 	}
 
 	/*
@@ -574,6 +592,14 @@ nbd_io_exec(struct spdk_nbd_disk *nbd)
 	int io_count = 0;
 	int ret = 0;
 
+	/*
+	 * For soft disconnection, nbd server must handle all outstanding
+	 * request before closing connection.
+	 */
+	if (nbd->state == NBD_DISK_STATE_HARDDISC) {
+		return 0;
+	}
+
 	if (!TAILQ_EMPTY(&nbd->received_io_list)) {
 		TAILQ_FOREACH_SAFE(io, &nbd->received_io_list, tailq, io_tmp) {
 			TAILQ_REMOVE(&nbd->received_io_list, io, tailq);
@@ -781,6 +807,14 @@ nbd_io_xmit(struct spdk_nbd_disk *nbd)
 {
 	int ret = 0;
 	int rc;
+
+	/*
+	 * For soft disconnection, nbd server must handle all outstanding
+	 * request before closing connection.
+	 */
+	if (nbd->state == NBD_DISK_STATE_HARDDISC) {
+		return 0;
+	}
 
 	while (!TAILQ_EMPTY(&nbd->executed_io_list)) {
 		rc = nbd_io_xmit_internal(nbd);
