@@ -3,7 +3,7 @@ language: c
 compiler:
   - gcc
 
-dist: bionic
+dist: focal
 sudo: false
 
 addons:
@@ -16,19 +16,16 @@ addons:
       - libnuma-dev
       - uuid-dev
       - lcov
-      - python3-setuptools
-      - python3-pip
+      - nasm
+      - meson
       - ninja-build
 
 before_script:
   - git submodule update --init
-  # temporarily disable shellcheck which gives errors in upstream
-  - sudo rm `which shellcheck`
-  - pip3 install meson
   - export MAKEFLAGS="-j$(nproc)"
 
 script:
   - ./scripts/check_format.sh
-  - ./configure --enable-werror --without-isal --enable-debug --enable-coverage --enable-asan
+  - ./configure --enable-werror --without-isal --enable-debug --enable-coverage --enable-asan --with-crypto --with-iscsi-initiator
   - make
   - ./test/unit/unittest.sh
