@@ -307,6 +307,10 @@ struct spdk_nvmf_subsystem {
 	char						subnqn[SPDK_NVMF_NQN_MAX_LEN + 1];
 };
 
+typedef int (*nvmf_keep_alive_poll_fn)(void *ctx);
+
+void nvmf_set_keep_alive_poll(nvmf_keep_alive_poll_fn keep_alive_poll_fn);
+
 int nvmf_poll_group_add_transport(struct spdk_nvmf_poll_group *group,
 				  struct spdk_nvmf_transport *transport);
 int nvmf_poll_group_update_subsystem(struct spdk_nvmf_poll_group *group,

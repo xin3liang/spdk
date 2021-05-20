@@ -48,6 +48,8 @@
 
 #include "spdk/log.h"
 
+static nvmf_keep_alive_poll_fn g_keep_alive_poll_fn = NULL;
+
 #define MIN_KEEP_ALIVE_TIMEOUT_IN_MS 10000
 #define NVMF_DISC_KATO_IN_MS 120000
 #define KAS_TIME_UNIT_IN_MS 100
@@ -169,6 +171,12 @@ nvmf_ctrlr_disconnect_io_qpairs_on_pg(struct spdk_io_channel_iter *i)
 	spdk_for_each_channel_continue(i, _nvmf_ctrlr_disconnect_qpairs_on_pg(i, false));
 }
 
+void
+nvmf_set_keep_alive_poll(nvmf_keep_alive_poll_fn keep_alive_poll_fn)
+{
+	g_keep_alive_poll_fn = keep_alive_poll_fn;
+}
+
 static int
 nvmf_ctrlr_keep_alive_poll(void *ctx)
 {
@@ -216,9 +224,15 @@ nvmf_ctrlr_start_keep_alive_timer(struct spdk_nvmf_ctrlr *ctrlr)
 
 		ctrlr->last_keep_alive_tick = spdk_get_ticks();
 
-		SPDK_DEBUGLOG(nvmf, "Ctrlr add keep alive poller\n");
-		ctrlr->keep_alive_poller = SPDK_POLLER_REGISTER(nvmf_ctrlr_keep_alive_poll, ctrlr,
-					   ctrlr->feat.keep_alive_timer.bits.kato * 1000);
+		if (!g_keep_alive_poll_fn) {
+			SPDK_DEBUGLOG(nvmf, "Ctrlr add default keep alive poller\n");
+			ctrlr->keep_alive_poller = SPDK_POLLER_REGISTER(nvmf_ctrlr_keep_alive_poll, ctrlr,
+						   ctrlr->feat.keep_alive_timer.bits.kato * 1000);
+		} else {
+			SPDK_DEBUGLOG(nvmf, "Ctrlr add keep alive poller %p\n", g_keep_alive_poll_fn);
+			ctrlr->keep_alive_poller = SPDK_POLLER_REGISTER(g_keep_alive_poll_fn, ctrlr,
+						   ctrlr->feat.keep_alive_timer.bits.kato * 1000);
+		}
 	}
 }
 
