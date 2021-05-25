@@ -1371,10 +1371,12 @@ spdk_nvme_ctrlr_reset(struct spdk_nvme_ctrlr *ctrlr)
 
 	ctrlr->adminq->transport_failure_reason = SPDK_NVME_QPAIR_FAILURE_LOCAL;
 	nvme_transport_ctrlr_disconnect_qpair(ctrlr, ctrlr->adminq);
-	rc = nvme_transport_ctrlr_connect_qpair(ctrlr, ctrlr->adminq);
-	if (rc != 0) {
-		SPDK_ERRLOG("Controller reinitialization failed.\n");
-		goto out;
+	if (ctrlr->reinit_after_reset) {
+		rc = nvme_transport_ctrlr_connect_qpair(ctrlr, ctrlr->adminq);
+		if (rc != 0) {
+			SPDK_ERRLOG("Controller reinitialization failed.\n");
+			goto out;
+		}
 	}
 
 	/* Doorbell buffer config is invalid during reset */
@@ -1384,6 +1386,10 @@ spdk_nvme_ctrlr_reset(struct spdk_nvme_ctrlr *ctrlr)
 	nvme_ctrlr_free_iocs_specific_data(ctrlr);
 
 	spdk_bit_array_free(&ctrlr->free_io_qids);
+
+	if (!ctrlr->reinit_after_reset) {
+		return rc;
+	}
 
 	/* Set the state back to INIT to cause a full hardware reset. */
 	nvme_ctrlr_set_state(ctrlr, NVME_CTRLR_STATE_INIT, NVME_TIMEOUT_INFINITE);
@@ -3287,6 +3293,7 @@ nvme_ctrlr_construct(struct spdk_nvme_ctrlr *ctrlr)
 	ctrlr->is_resetting = false;
 	ctrlr->is_failed = false;
 	ctrlr->is_destructed = false;
+	ctrlr->reinit_after_reset = true;
 
 	TAILQ_INIT(&ctrlr->active_io_qpairs);
 	STAILQ_INIT(&ctrlr->queued_aborts);

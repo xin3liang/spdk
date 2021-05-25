@@ -739,6 +739,8 @@ struct spdk_nvme_ctrlr {
 
 	bool				timeout_enabled;
 
+	bool				reinit_after_reset;
+
 	uint16_t			max_sges;
 
 	uint16_t			cntlid;
