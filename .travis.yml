@@ -12,6 +12,7 @@ addons:
       - astyle
       - libcunit1-dev
       - libaio-dev
+      - libiscsi-dev
       - libssl-dev
       - libnuma-dev
       - uuid-dev

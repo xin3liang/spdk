@@ -7592,6 +7592,10 @@ Example response:
 }
 ~~~
 
+## construct_ms_lvol_bdev {#rpc_construct_ms_lvol_bdev}
+
+Placeholder: Mayastor-specific
+
 # RAID
 
 ## bdev_raid_get_bdevs {#rpc_bdev_raid_get_bdevs}
