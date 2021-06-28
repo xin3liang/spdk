@@ -9,7 +9,6 @@
       repo = "spdk";
       ref = "flake";
       flake = true;
-      submodules = true;
     };
   };
 
@@ -17,9 +16,7 @@
     defaultPackage.x86_64-linux =
       with import nixpkgs { system = "x86_64-linux"; };
       stdenv.mkDerivation {
-        root = ./.;
-        name = "libspdk";
-        src = self;
+
         nativeBuildInputs = [
           meson
           ninja
@@ -49,6 +46,10 @@
           zlib
           binutils
         ];
+
+        preConfigure = ''
+          ${pkgs.git}/bin/git submodule update --init --recursive;
+          '';
 
         configurePhase = ''
           patchShebangs ./. > /dev/null
