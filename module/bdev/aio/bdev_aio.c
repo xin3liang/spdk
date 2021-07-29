@@ -45,16 +45,11 @@
 #include "spdk/json.h"
 #include "spdk/util.h"
 #include "spdk/string.h"
+
 #include "spdk/log.h"
 
 #include <sys/eventfd.h>
 #include <libaio.h>
-#include <linux/fs.h>
-
-#include "bdev_aio_task.h"
-#include "bdev_aio_sync.h"
-
-#define AIO_USE_FALLOCATE_SPARSE 1
 
 struct bdev_aio_io_channel {
 	uint64_t				io_inflight;
@@ -73,15 +68,18 @@ struct bdev_aio_group_channel {
 	TAILQ_HEAD(, bdev_aio_io_channel)	io_ch_head;
 };
 
-typedef int (*aio_range_fn)(int fd, uint64_t range[]);
+struct bdev_aio_task {
+	struct iocb			iocb;
+	uint64_t			len;
+	struct bdev_aio_io_channel	*ch;
+	TAILQ_ENTRY(bdev_aio_task)	link;
+};
 
 struct file_disk {
 	struct bdev_aio_task	*reset_task;
 	struct spdk_poller	*reset_retry_timer;
 	struct spdk_bdev	disk;
 	char			*filename;
-	aio_range_fn		unmap;
-	aio_range_fn		zero;
 	int			fd;
 	TAILQ_ENTRY(file_disk)  link;
 	bool			block_size_override;
@@ -125,134 +123,46 @@ static struct spdk_bdev_module aio_if = {
 
 SPDK_BDEV_MODULE_REGISTER(aio, &aio_if)
 
-#define ERROR(rc) (((rc) > 0) ? -(rc) : -EIO)
-
 static int
 bdev_aio_open(struct file_disk *disk)
 {
 	int fd;
 
-	fd = open(disk->filename, (O_RDWR | O_DIRECT));
+	fd = open(disk->filename, O_RDWR | O_DIRECT);
 	if (fd < 0) {
 		/* Try without O_DIRECT for non-disk files */
 		fd = open(disk->filename, O_RDWR);
 		if (fd < 0) {
-			int rc = errno;
-
-			SPDK_ERRLOG("open(%s) failed, errno %d: %s\n",
-				    disk->filename, rc, spdk_strerror(rc));
+			SPDK_ERRLOG("open() failed (file:%s), errno %d: %s\n",
+				    disk->filename, errno, spdk_strerror(errno));
 			disk->fd = -1;
-			return ERROR(rc);
+			return -1;
 		}
 	}
 
 	disk->fd = fd;
-	return 0;
-}
 
-/* zero region of a (sparse) file by creating a hole */
-static int
-aio_range_fallocate_sparse(int fd, uint64_t range[])
-{
-	return fallocate(fd, (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE), range[0], range[1]);
-}
-
-#if !AIO_USE_FALLOCATE_SPARSE
-/* zero region of a file by writing zeros */
-static int
-aio_range_fallocate_zero(int fd, uint64_t range[])
-{
-	return fallocate(fd, (FALLOC_FL_ZERO_RANGE | FALLOC_FL_KEEP_SIZE), range[0], range[1]);
-}
-#endif
-
-/* unmap region of a device */
-static int
-aio_range_unmap_discard(int fd, uint64_t range[])
-{
-	return ioctl(fd, BLKDISCARD, range);
-}
-
-/* zero region of a device */
-static int
-aio_range_unmap_zero(int fd, uint64_t range[])
-{
-	return ioctl(fd, BLKZEROOUT, range);
-}
-
-static int
-set_aio_range_functions(struct file_disk *disk)
-{
-	struct stat st;
-	int rc;
-
-	if (fstat(disk->fd, &st) < 0) {
-		rc = errno;
-		SPDK_ERRLOG("fstat(%s) failed, errno %d: %s\n",
-			    disk->filename, rc, spdk_strerror(rc));
-		disk->unmap = NULL;
-		disk->zero = NULL;
-		return ERROR(rc);
-	}
-
-	if (S_ISBLK(st.st_mode)) {
-		int discard = 0;
-
-		/* this may be removed eventually - it seems that for newer kernels the ioctl() always returns 0 */
-		if (ioctl(disk->fd, BLKDISCARDZEROES, &discard) == 0) {
-			if (discard) {
-				/* rely on fact that device guarantees that discarded blocks will be read back as zeros */
-				SPDK_NOTICELOG("device=%s unmap=discard zero=discard\n", disk->filename);
-				disk->unmap = aio_range_unmap_discard;
-				disk->zero = aio_range_unmap_discard;
-				return 0;
-			}
-		} else {
-			/* log an error if ioctl() fails, but otherwise behave as though "discard" operation is not supported */
-			rc = errno;
-			SPDK_ERRLOG("ioctl(%s, BLKDISCARDZEROES) failed, errno %d: %s\n",
-				    disk->filename, rc, spdk_strerror(rc));
-		}
-
-		/* get kernel to zero blocks on our behalf */
-		SPDK_NOTICELOG("device=%s unmap=none zero=zero\n", disk->filename);
-		disk->unmap = NULL;
-		disk->zero = aio_range_unmap_zero;
-		return 0;
-	}
-
-	/* simulate unmap by creating a hole in (sparse) file */
-	disk->unmap = aio_range_fallocate_sparse;
-
-	/* FIXME: this should be configurable at run time */
-#if AIO_USE_FALLOCATE_SPARSE
-	/* zero blocks by creating a hole in (sparse) file */
-	SPDK_NOTICELOG("file=%s unmap=sparse zero=sparse\n", disk->filename);
-	disk->zero = aio_range_fallocate_sparse;
-#else
-	/* effectively get kernel to write zeros on our behalf */
-	SPDK_NOTICELOG("file=%s unmap=sparse zero=zero\n", disk->filename);
-	disk->zero = aio_range_fallocate_zero;
-#endif
 	return 0;
 }
 
 static int
 bdev_aio_close(struct file_disk *disk)
 {
-	if (disk->fd < 0) {
+	int rc;
+
+	if (disk->fd == -1) {
 		return 0;
 	}
 
-	if (close(disk->fd) < 0) {
-		int rc = errno;
-
-		SPDK_ERRLOG("close(%d) failed, errno %d: %s\n",
-			    disk->fd, rc, spdk_strerror(rc));
+	rc = close(disk->fd);
+	if (rc < 0) {
+		SPDK_ERRLOG("close() failed (fd=%d), errno %d: %s\n",
+			    disk->fd, errno, spdk_strerror(errno));
 		return -1;
 	}
 
 	disk->fd = -1;
+
 	return 0;
 }
 
@@ -324,134 +234,16 @@ bdev_aio_writev(struct file_disk *fdisk, struct spdk_io_channel *ch,
 	return len;
 }
 
-static struct aio_request_ctx *
-create_aio_request_ctx(struct spdk_bdev_io *bdev_io, aio_request_fn fn, size_t ctx_size)
-{
-	struct aio_request_ctx *request = calloc(1, sizeof(struct aio_request_ctx) + ctx_size);
-
-	if (request != NULL) {
-		request->aio_task = (struct bdev_aio_task *)bdev_io->driver_ctx;
-		request->thread = spdk_get_thread();
-		request->fn = fn;
-	}
-
-	return request;
-}
-
 static void
-aio_send_range_request(struct spdk_bdev_io *bdev_io, struct file_disk *fdisk, aio_request_fn fn)
+bdev_aio_flush(struct file_disk *fdisk, struct bdev_aio_task *aio_task)
 {
-	struct aio_request_ctx *request;
-	struct aio_range_ctx *ctx;
+	int rc = fsync(fdisk->fd);
 
-	request = create_aio_request_ctx(bdev_io, fn, sizeof(struct aio_range_ctx));
-
-	if (request == NULL) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
-		return;
+	if (rc == 0) {
+		spdk_bdev_io_complete(spdk_bdev_io_from_ctx(aio_task), SPDK_BDEV_IO_STATUS_SUCCESS);
+	} else {
+		spdk_bdev_io_complete_aio_status(spdk_bdev_io_from_ctx(aio_task), -errno);
 	}
-
-	ctx = (struct aio_range_ctx *)request->ctx;
-
-	ctx->fdisk = fdisk;
-
-	ctx->offset_blocks = bdev_io->u.bdev.offset_blocks;
-	ctx->num_blocks = bdev_io->u.bdev.num_blocks;
-	ctx->blocklen = bdev_io->bdev->blocklen;
-
-	if (aio_send_request(request) < 0) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
-		free(request);
-	}
-}
-
-static int
-aio_flush_request_fn(void *arg)
-{
-	struct aio_flush_ctx *ctx = arg;
-
-	SPDK_NOTICELOG("[flush] file=%s\n", ctx->fdisk->filename);
-
-	return fsync(ctx->fdisk->fd);
-}
-
-static void
-bdev_aio_flush(struct spdk_bdev_io *bdev_io)
-{
-	struct aio_request_ctx *request;
-	struct aio_flush_ctx *ctx;
-
-	request = create_aio_request_ctx(bdev_io, aio_flush_request_fn, sizeof(struct aio_flush_ctx));
-
-	if (request == NULL) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
-		return;
-	}
-
-	ctx = (struct aio_flush_ctx *)request->ctx;
-
-	ctx->fdisk = bdev_io->bdev->ctxt;
-
-	if (aio_send_request(request) < 0) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
-		free(request);
-	}
-}
-
-static int
-aio_unmap_request_fn(void *arg)
-{
-	struct aio_range_ctx *ctx = arg;
-	uint64_t range[2];
-
-	range[0] = ctx->offset_blocks * ctx->blocklen;
-	range[1] = ctx->num_blocks * ctx->blocklen;
-
-	SPDK_NOTICELOG("[unmap] file=%s range=%" PRIu64 ",%" PRIu64 "\n",
-		       ctx->fdisk->filename, range[0], range[1]);
-
-	return ctx->fdisk->unmap(ctx->fdisk->fd, range);
-}
-
-static void
-bdev_aio_unmap(struct spdk_bdev_io *bdev_io)
-{
-	struct file_disk *fdisk = bdev_io->bdev->ctxt;
-
-	if (fdisk->unmap == NULL) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
-		return;
-	}
-
-	aio_send_range_request(bdev_io, fdisk, aio_unmap_request_fn);
-}
-
-static int
-aio_zero_request_fn(void *arg)
-{
-	struct aio_range_ctx *ctx = arg;
-	uint64_t range[2];
-
-	range[0] = ctx->offset_blocks * ctx->blocklen;
-	range[1] = ctx->num_blocks * ctx->blocklen;
-
-	SPDK_NOTICELOG("[zero] file=%s range=%" PRIu64 ",%" PRIu64 "\n",
-		       ctx->fdisk->filename, range[0], range[1]);
-
-	return ctx->fdisk->zero(ctx->fdisk->fd, range);
-}
-
-static void
-bdev_aio_zero(struct spdk_bdev_io *bdev_io)
-{
-	struct file_disk *fdisk = bdev_io->bdev->ctxt;
-
-	if (fdisk->zero == NULL) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
-		return;
-	}
-
-	aio_send_range_request(bdev_io, fdisk, aio_zero_request_fn);
 }
 
 static int
@@ -700,8 +492,7 @@ bdev_aio_get_buf_cb(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io,
 	}
 }
 
-static void
-bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
+static int _bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
 {
 	switch (bdev_io->type) {
 	/* Read and write operations must be performed on buffers aligned to
@@ -711,26 +502,24 @@ bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io
 	case SPDK_BDEV_IO_TYPE_WRITE:
 		spdk_bdev_io_get_buf(bdev_io, bdev_aio_get_buf_cb,
 				     bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
-		break;
-
+		return 0;
 	case SPDK_BDEV_IO_TYPE_FLUSH:
-		bdev_aio_flush(bdev_io);
-		break;
+		bdev_aio_flush((struct file_disk *)bdev_io->bdev->ctxt,
+			       (struct bdev_aio_task *)bdev_io->driver_ctx);
+		return 0;
 
 	case SPDK_BDEV_IO_TYPE_RESET:
 		bdev_aio_reset((struct file_disk *)bdev_io->bdev->ctxt,
 			       (struct bdev_aio_task *)bdev_io->driver_ctx);
-		break;
-
-	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
-		bdev_aio_zero(bdev_io);
-		break;
-
-	case SPDK_BDEV_IO_TYPE_UNMAP:
-		bdev_aio_unmap(bdev_io);
-		break;
-
+		return 0;
 	default:
+		return -1;
+	}
+}
+
+static void bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
+{
+	if (_bdev_aio_submit_request(ch, bdev_io) < 0) {
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 	}
 }
@@ -744,12 +533,6 @@ bdev_aio_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
 	case SPDK_BDEV_IO_TYPE_FLUSH:
 	case SPDK_BDEV_IO_TYPE_RESET:
 		return true;
-
-	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
-		return (((struct file_disk *)ctx)->zero != NULL);
-
-	case SPDK_BDEV_IO_TYPE_UNMAP:
-		return (((struct file_disk *)ctx)->unmap != NULL);
 
 	default:
 		return false;
@@ -939,14 +722,9 @@ create_aio_bdev(const char *name, const char *filename, uint32_t block_size)
 		goto error_return;
 	}
 
-	rc = bdev_aio_open(fdisk);
-	if (rc < 0) {
-		SPDK_ERRLOG("Unable to open file %s, errno %d\n", filename, -rc);
-		goto error_return;
-	}
-
-	rc = set_aio_range_functions(fdisk);
-	if (rc < 0) {
+	if (bdev_aio_open(fdisk)) {
+		SPDK_ERRLOG("Unable to open file %s. fd: %d errno: %d\n", filename, fdisk->fd, errno);
+		rc = -errno;
 		goto error_return;
 	}
 
@@ -1077,18 +855,12 @@ bdev_aio_initialize(void)
 	spdk_io_device_register(&aio_if, bdev_aio_group_create_cb, bdev_aio_group_destroy_cb,
 				sizeof(struct bdev_aio_group_channel), "aio_module");
 
-	if (aio_sync_init() < 0) {
-		spdk_io_device_unregister(&aio_if, NULL);
-		return -1;
-	}
-
 	return 0;
 }
 
 static void
 bdev_aio_fini(void)
 {
-	aio_sync_fini();
 	spdk_io_device_unregister(&aio_if, NULL);
 }
 
