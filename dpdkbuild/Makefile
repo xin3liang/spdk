@@ -54,15 +54,13 @@ endif
 DPDK_DRIVERS = bus bus/pci bus/vdev mempool/ring
 
 # common crypto/reduce drivers
-ifeq ($(findstring y,$(CONFIG_CRYPTO)$(CONFIG_REDUCE)),y)
-DPDK_DRIVERS += crypto/qat compress/qat common/qat
-endif
+#ifeq ($(findstring y,$(CONFIG_CRYPTO)$(CONFIG_REDUCE)),y)
+#DPDK_DRIVERS += crypto/qat compress/qat common/qat
+#endif
 
 ifeq ($(CONFIG_CRYPTO),y)
 # crypto/qat is just a stub, the compress/qat pmd is used instead
-DPDK_DRIVERS += crypto crypto/aesni_mb
-DPDK_CFLAGS += -I$(IPSEC_MB_DIR)
-DPDK_LDFLAGS += -L$(IPSEC_MB_DIR)
+DPDK_DRIVERS += crypto crypto/openssl
 endif
 
 ifeq ($(CONFIG_REDUCE),y)
