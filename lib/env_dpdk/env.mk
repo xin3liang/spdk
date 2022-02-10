@@ -78,18 +78,18 @@ DPDK_FRAMEWORK=n
 ifeq ($(CONFIG_CRYPTO),y)
 DPDK_FRAMEWORK=y
 DPDK_LIB_LIST += rte_reorder
-ifneq (, $(wildcard $(DPDK_LIB_DIR)/librte_crypto_ipsec_mb.*))
-# PMD name as of DPDK 21.11
-DPDK_LIB_LIST += rte_crypto_ipsec_mb
-else
-ifneq (, $(wildcard $(DPDK_LIB_DIR)/librte_crypto_aesni_mb.*))
-# PMD name for DPDK 21.08 and earlier
-DPDK_LIB_LIST += rte_crypto_aesni_mb
-else
-# PMD name for DPDK 20.08 and earlier
-DPDK_LIB_LIST += rte_pmd_aesni_mb
-endif
-endif
+#ifneq (, $(wildcard $(DPDK_LIB_DIR)/librte_crypto_ipsec_mb.*))
+## PMD name as of DPDK 21.11
+#DPDK_LIB_LIST += rte_crypto_ipsec_mb
+#else
+#ifneq (, $(wildcard $(DPDK_LIB_DIR)/librte_crypto_aesni_mb.*))
+## PMD name for DPDK 21.08 and earlier
+#DPDK_LIB_LIST += rte_crypto_aesni_mb
+#else
+## PMD name for DPDK 20.08 and earlier
+#DPDK_LIB_LIST += rte_pmd_aesni_mb
+#endif
+#endif
 endif
 
 ifeq ($(CONFIG_REDUCE),y)
@@ -111,12 +111,12 @@ endif
 
 ifeq ($(DPDK_FRAMEWORK),y)
 DPDK_LIB_LIST += rte_cryptodev rte_compressdev rte_bus_vdev
-ifneq (, $(wildcard $(DPDK_LIB_DIR)/librte_common_qat.*))
-DPDK_LIB_LIST += rte_common_qat
-else
-# PMD name for DPDK 20.08 and earlier
-DPDK_LIB_LIST += rte_pmd_qat
-endif
+#ifneq (, $(wildcard $(DPDK_LIB_DIR)/librte_common_qat.*))
+#DPDK_LIB_LIST += rte_common_qat
+#else
+## PMD name for DPDK 20.08 and earlier
+#DPDK_LIB_LIST += rte_pmd_qat
+#endif
 endif
 
 ifneq (, $(wildcard $(DPDK_LIB_DIR)/librte_kvargs.*))
