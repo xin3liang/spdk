@@ -61,16 +61,12 @@ DPDK_LIBS += kvargs telemetry
 DPDK_LIBS += power timer ethdev net
 
 # common crypto/reduce drivers
-ifeq ($(findstring y,$(CONFIG_CRYPTO)$(CONFIG_REDUCE)),y)
-DPDK_DRIVERS += crypto/qat compress/qat common/qat
-endif
+#ifeq ($(findstring y,$(CONFIG_CRYPTO)$(CONFIG_REDUCE)),y)
+#DPDK_DRIVERS += crypto/qat compress/qat common/qat
+#endif
 
 ifeq ($(CONFIG_CRYPTO),y)
-DPDK_DRIVERS += crypto crypto/ipsec_mb
-# aesni_mb is name of the PMD in DPDK 21.08 and earlier
-DPDK_DRIVERS += crypto/aesni_mb
-DPDK_CFLAGS += -I$(IPSEC_MB_DIR)
-DPDK_LDFLAGS += -L$(IPSEC_MB_DIR)
+DPDK_DRIVERS += crypto crypto/openssl
 endif
 
 ifeq ($(CONFIG_REDUCE),y)
